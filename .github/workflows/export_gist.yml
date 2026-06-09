@@ -1,0 +1,29 @@
+name: 🧠 Đúc Mega-Context & Xuất Gist
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export-master-gist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Cài đặt Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Đúc tệp Mega-Context
+        run: python3 repo_scanner.py
+
+      - name: Xuất bản lên GitHub Gist
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh auth login --with-token <<< "${GH_TOKEN}"
+          GIST_URL=$(gh gist create ai_os_master_context.md --public --desc "[AI OS v11] Mega-Context cho LLM")
+          echo "🎉 XUẤT XƯỞNG THÀNH CÔNG!"
+          echo "👉 Sếp ném link này cho bất kỳ LLM nào: $GIST_URL"
+          echo "GIST_URL=$GIST_URL" >> $GITHUB_STEP_SUMMARY
