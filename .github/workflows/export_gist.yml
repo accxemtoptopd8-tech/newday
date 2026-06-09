@@ -18,12 +18,20 @@ jobs:
       - name: Đúc tệp Mega-Context
         run: python3 repo_scanner.py
 
-      - name: Xuất bản lên GitHub Gist
+      - name: Đẩy đè lên Gist cũ của Sếp
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          gh auth login --with-token <<< "${GH_TOKEN}"
-          GIST_URL=$(gh gist create ai_os_master_context.md --public --desc "[AI OS v11] Mega-Context cho LLM")
-          echo "🎉 XUẤT XƯỞNG THÀNH CÔNG!"
-          echo "👉 Sếp ném link này cho bất kỳ LLM nào: $GIST_URL"
-          echo "GIST_URL=$GIST_URL" >> $GITHUB_STEP_SUMMARY
+          # 1. Kiểm tra an toàn: Nếu quên nạp Key, báo lỗi luôn để khỏi treo máy
+          if [ -z "$GH_TOKEN" ]; then
+            echo "❌ LỖI CHÍ MẠNG: Sếp chưa nạp GH_PAT vào Settings > Secrets của Repo này!"
+            exit 1
+          fi
+          
+          # 2. Ép xác thực an toàn bằng biến môi trường (không dùng lệnh đăng nhập thủ công)
+          # 3. Ghi đè nội dung mới lên Gist ID của Sếp
+          gh gist edit c17fd2e68c12d1742522b86808bbe45d -f ai_os_master_context.md ai_os_master_context.md
+          
+          echo "🎉 ĐÃ GHI ĐÈ THÀNH CÔNG LÊN GIST CŨ!"
+          echo "👉 Sếp cứ dùng link này cho khung chat mới: https://gist.github.com/c17fd2e68c12d1742522b86808bbe45d"
+          echo "GIST_URL=https://gist.github.com/c17fd2e68c12d1742522b86808bbe45d" >> $GITHUB_STEP_SUMMARY
