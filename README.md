@@ -1,70 +1,61 @@
-
-# 🧠 AI Business OS - Hệ Điều Hành Tự Động Hóa Doanh Nghiệp (v11.0)
-
-## 🌟 1. TRIẾT LÝ THIẾT KẾ CỐT LÕI (CORE PHILOSOPHY)
-Hệ thống được xây dựng để vận hành hoàn hảo trong môi trường độc lập, tối ưu hóa tuyệt đối về mặt chi phí nhưng đạt hiệu suất kiến trúc ở cấp độ công nghiệp. Mọi module xoay quanh 3 trục tư duy chiến lược:
-
-* **"Con rùa hiện đại" (Batch-Driven Resiliency):** Chấp nhận độ trễ (hệ thống được đánh thức qua GitHub Actions Cronjob 5 phút/lần) để đổi lấy sự bền bỉ, tính sẵn sàng cao, hoàn toàn miễn phí và không bao giờ lo chết tiến trình nền.
-* **"Vơ bèo vặt tép" (Dynamic API Key Optimization):** Tối ưu hóa 100% chi phí vận hành AI. Hệ thống sử dụng một "Trạm Kiểm Định" (`verify_and_save.py`) có khả năng tự động nạp bất kỳ nguồn API Key nào (OpenAI, Gemini, OpenRouter, Custom API Base), dội bom quét qua danh sách model để tìm mạch sống, tự động cấu hình `.env` và ép MongoDB định tuyến luồng xử lý mà không cần can thiệp thủ công vào mã nguồn.
-* **"Kiến trúc bất tử" (Decoupled Outbox Pattern):** Tách rời hoàn toàn cổng tiếp nhận và bộ não xử lý thông qua cơ sở dữ liệu MongoDB. Cổng giao tiếp không gọi trực tiếp LLM mà chỉ phát sự kiện vào kho lưu trữ. Nếu bộ não AI sập hoặc hết quota, sự kiện vẫn nằm chờ an toàn trong Outbox, không bao giờ rơi rớt dữ liệu.
-
----
-
-## 🗺️ 2. BẢN ĐỒ KIẾN TRÚC LUỒNG DỮ LIỆU (EVENT-DRIVEN FLOW)
-
-Hệ thống phân tách rạch ròi thành 3 tầng tác chiến (T0, T1, T2):
-
-
-```
-[ Người dùng ]
-│  (Ngôn ngữ tự nhiên)
-▼
-┌────────────────────────────────────────────────────────┐
-│ TẤT CẢ MODULES ĐỀU GIAO TIẾP QUA TRÁI TIM MONGODB      │
-│                                                        │
-│  1. T0 (Telegram Gateway): Tiếp nhận -> Ghi Outbox     │
-│  2. Outbox Events: Lưu trữ trạng thái sự kiện chờ     │
-│  3. T2 (AI Strategy Worker): Bốc việc -> Xử lý -> JSON │
-└────────────────────────────────────────────────────────┘
-│
-▼
-[ Màn hình Telegram ] (Ting-ting nhận báo cáo chiến lược)
-```
-
-1.  **TẦNG CHỈ HUY - T0 (Telegram Gateway):** Nơi Giám đốc ra lệnh trực tiếp bằng điện thoại. Bot tiếp nhận ý tưởng dự án, lập tức đóng gói nhiên liệu thô và bắn một Đại sự kiện `PHASE_1_COMPLETED` vào bảng `outbox_events` trong MongoDB.
-2.  **TRÁI TIM HỆ THỐNG - MONGODB & REDIS:** Kho lưu trữ trung tâm, giữ vai trò kết nối trung gian và quản lý hạn mức ngân sách, chống spam quota của API.
-3.  **TẦNG THỰC THI - T2 (AI Strategy Worker):** Được kích hoạt tự động mỗi 5 phút bởi GitHub Actions. Worker thức dậy, rút sự kiện từ Outbox, gọi LLM, kích hoạt bộ tự vá cấu trúc JSON, xuất bản đồ chiến lược hoàn chỉnh ghi vào kho dữ liệu, và phát sự kiện báo cáo thành công.
-
----
-
-## 🚦 3. TRẠNG THÁI HIỆN TẠI CỦA REPO (CURRENT REPO STATE)
-* `Core/config.py`: Quản lý cấu hình biến môi trường hệ thống.
-* `Workers/strategy_generator.py`: Bộ não xử lý Giai đoạn 1 (T2 Worker). Đã được nâng cấp tích hợp công tắc thông minh `RUN_ONCE` để tự động ngắt máy khi dọn sạch kho sự kiện, bảo vệ tuyệt đối số phút chạy miễn phí (Quota) của GitHub.
-* `verify_and_save.py`: Trạm Lọc Máu API Key, tự động quét sinh tử model và cấu hình hệ thống.
-* `trigger_e2e.py`: File mồi sự kiện cục bộ để phục vụ kiểm toán đường ống dữ liệu.
-* `harvest.py`: Công cụ một chạm để lục tìm và xuất cục dữ liệu JSON Chiến lược cực phẩm từ cơ sở dữ liệu.
-
----
-
-## 🚀 4. KẾ HOẠCH HÀNH ĐỘNG CHIẾN LƯỢC (ROADMAP)
-
-### GIAI ĐOẠN 1: Khai Thông Kinh Mạch (Thông luồng chính thức)
-* **Mục tiêu:** Nối liền trục **Telegram Bot <-> MongoDB <-> GitHub Actions <-> Telegram Bot**.
-* **Hành động:** Nâng cấp `telegram_bot.py` thành một Event Gateway thực thụ. Thêm luồng lắng nghe (Listener) để khi Worker T2 hoàn thành bản vẽ chiến lược và lưu vào MongoDB, Bot sẽ tự động nhặt kết quả và "ting ting" gửi trả thẳng về tin nhắn Telegram của Giám đốc.
-
-### GIAI ĐOẠN 2: Bơm Máu Tối Thượng (Tích hợp Hệ thống DS2API)
-* **Mục tiêu:** Đấu nối thành công Repo `CJackHwang/ds2api` để biến giao diện Web Chat miễn phí của DeepSeek thành cổng API xịn có cấu trúc chuẩn OpenAI.
-* **Hành động:** 1. Triển khai trạm trung gian DS2API để lấy cổng Endpoint tùy chỉnh.
-    2. Cấu hình biến môi trường `CUSTOM_API_BASE` vào hệ thống.
-    3. Nâng cấp Trạm Kiểm Định để LiteLLM tự động chuyển hướng đi qua cổng Custom Base này, vắt kiệt tư duy logic của DeepSeek V3/R1 với chi phí bằng 0.
-
----
-
-## 📜 5. LUẬT CHƠI & KỶ LUẬT LÕI DÀNH CHO LLM BẢO TRÌ
-Bất kỳ mô hình ngôn ngữ nào khi tiếp nhận Repo này để phát triển mã nguồn, **BẮT BUỘC** phải tuân thủ nghiêm ngặt các nguyên tắc kiến trúc sau:
-1.  **Tuyệt đối không phá vỡ Outbox Pattern:** Các module không được phép gọi trực tiếp lẫn nhau. Mọi hành vi luân chuyển dữ liệu và trạng thái phải thông qua việc tạo và thay đổi trạng thái sự kiện trong Collection `outbox_events` của MongoDB.
-2.  **Giữ vững công tắc tiết kiệm Quota:** Mọi mã nguồn viết cho Worker chạy trên GitHub Actions phải kế thừa và tôn trọng biến môi trường `RUN_ONCE`. Nếu kho việc trống, tiến trình phải tự ngắt (`break` hoặc `exit`), nghiêm cấm chạy vòng lặp vô hạn `while True` gây treo luồng Actions.
-3.  **Tương thích Custom Base URL:** Khi cấu hình gọi LLM thông qua LiteLLM, luôn phải truyền tham số `api_base=CUSTOM_API_BASE` (nếu có) để sẵn sàng mở đường cho các cổng trung gian như DS2API hoặc OpenRouter hoạt động mượt mà.
+Dưới đây là file README.md được thiết kế theo tư duy kiến trúc hệ thống hiện đại, tối ưu hóa cho mô hình **"0 đồng - 0 thẻ - Tự chủ"**. Bạn có thể sử dụng nội dung này cho mọi repository trong hệ sinh thái của mình.
+# T2-CORE: Hệ thống Tự động hóa Dữ liệu "Zero-Cost & Self-Sustaining"
+## 1. Triết lý hệ thống
+ * **0 Đồng (Zero-Cost):** Loại bỏ hoàn toàn chi phí API, Subscription, và Hosting trả phí. Tận dụng tài nguyên miễn phí từ GitHub Actions, Oracle/Google Cloud Free Tier và sức mạnh tính toán tự thân.
+ * **0 Thẻ (Zero-Card):** Không phụ thuộc vào các dịch vụ cần gắn thẻ tín dụng (Stripe/Paypal). Hệ thống sử dụng cơ chế xoay vòng tài khoản (account rotation) tự quản lý, loại bỏ rủi ro bị khóa tài khoản hoặc mất phí ẩn.
+ * **Tính tự chủ (Self-Sustaining):** Hệ thống vận hành theo mô hình "Bus CPU" với các luồng xử lý độc lập (Quad-core), nơi dữ liệu tự vận động từ nguồn thô đến kho tri thức mà không cần sự can thiệp thủ công.
+## 2. Sơ đồ khối kiến trúc (Architecture Flow)
+```mermaid
+graph TD
+    %% Nguồn Dữ liệu (Bus)
+    Input[("Nguồn Web (Finance/RealEstate/Crypto)")] --> Scrapling("Scrapling (Bus CPU)")
+    
+    %% Tầng xử lý - 4 Core (GitHub Actions)
+    subgraph "Quad-Core Processing (GitHub Actions)"
+        C1["Core 1: Crypto Logic"]
+        C2["Core 2: Real Estate Data"]
+        C3["Core 3: Finance/Exchange"]
+        C4["Core 4: Tech/Utility"]
+    end
+    
+    Scrapling --> C1 & C2 & C3 & C4
+    
+    %% Tầng Lưu trữ tạm & AI
+    C1 & C2 & C3 & C4 --> GitHubRepo[("GitHub Repo (Kho Tạm)")]
+    GitHubRepo --> Agent("AI Agent (ds2api - Local/Cloud)")
+    
+    %% Tầng Lưu trữ cuối
+    Agent --> MongoDB[("MongoDB (Kho Tầng 2)")]
+    
+    %% Cơ chế quản lý
+    style Scrapling fill:#f96,stroke:#333
+    style GitHubRepo fill:#bbf,stroke:#333
+    style MongoDB fill:#dfd,stroke:#333
 
 ```
-
+## 3. Thành phần cốt lõi
+### A. Bus CPU - Scrapling
+ * **Vai trò:** Đóng vai trò là "Bus dữ liệu" hiệu năng cao, trích xuất dữ liệu thô (raw data) với cơ chế vượt qua bot detection mà không tốn phí proxy trả phí.
+ * **Cơ chế:** Hoạt động như một trình xử lý trung gian, đẩy dữ liệu vào luồng Action tương ứng.
+### B. Quad-Core (4 GitHub Actions)
+Hệ thống được chia thành 4 luồng xử lý độc lập, chạy trên GitHub Actions (miễn phí):
+ * **Core 1 (Crypto):** Phân tích biến động giá, whale activity, MFI/RSI tracking.
+ * **Core 2 (Real Estate):** Thu thập giá bất động sản, đối soát dữ liệu môi giới.
+ * **Core 3 (Exchange):** Giám sát tài khoản sàn, quản trị rủi ro (Margin calls, vị thế).
+ * **Core 4 (Utility):** Phát triển công cụ, hỗ trợ AI Agents, xử lý tài liệu nội bộ.
+### C. AI Agent & API (ds2api)
+ * **Vai trò:** Chuyển đổi cookie tài khoản (DeepSeek/khác) thành chuẩn OpenAI API.
+ * **Triết lý:** Sử dụng **Multi-account rotation** để không bao giờ bị rate-limit, đảm bảo "cơn khát token" luôn được giải quyết miễn phí.
+### D. Kho lưu trữ (Storage Layer)
+ * **GitHub (Kho tạm):** Lưu trữ dữ liệu thô, dùng làm "hệ thống file đệm" để đảm bảo tính an toàn dữ liệu trước khi AI xử lý.
+ * **MongoDB (Kho tầng 2):** Lưu trữ kết quả đã phân tích, sẵn sàng cho việc truy vấn và đưa ra quyết định đầu tư/vận hành.
+## 4. Nguyên tắc vận hành (Operating Principles)
+ 1. **Luôn giữ Offline-First:** Các thành phần lõi (emulator, data reader) phải tách rời khỏi nguồn dữ liệu để tránh bản quyền và rủi ro mất mát.
+ 2. **Tự động hóa hoàn toàn:** Mọi thao tác push/pull dữ liệu, chạy script phân tích, và log vào database đều phải thông qua CI/CD của GitHub.
+ 3. **Không phụ thuộc (Decoupling):** Nếu một Core bị lỗi, 3 Core còn lại vẫn vận hành bình thường. Nếu dịch vụ web mục tiêu thay đổi cấu trúc, chỉ cần chỉnh sửa Scrapling ở "Bus", không cần thay đổi tầng logic của AI Agent.
+ 4. **Tối ưu tài nguyên:** Sử dụng SQLite cho các tác vụ cần lưu trữ trạng thái nội bộ nếu cần thiết thay cho các dịch vụ DB đắt đỏ.
+## 5. Cấu hình & triển khai
+ * **Environment:** Dockerized (mọi dịch vụ chạy trên Docker để đảm bảo tính nhất quán giữa Local và Server).
+ * **Auth:** Sử dụng biến môi trường (Environment Variables) để quản lý cookies/tokens. **Tuyệt đối không push file cấu hình lên public repository.**
+ * **Monitoring:** Theo dõi logs thông qua chính GitHub Actions Run History.
+*Hệ thống được thiết kế bởi Keith Howe (Nguyễn Tiến Hiển) - Tối ưu hóa vì sự bền vững và hiệu suất không giới hạn.*
