@@ -1,31 +1,11 @@
-name: 🧠 Đúc Mega-Context & Xuất Gist
-
-on:
-  workflow_dispatch:
-
-jobs:
-  export-master-gist:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Cài đặt Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Đúc tệp Mega-Context
-        run: python3 repo_scanner.py
-
-      - name: Ghi đè lên Gist
-        env:
-          GH_TOKEN: ${{ secrets.GHN_PAT }}
-        run: |
-          # Đổi tên file local giống hệt tên file trên Gist
-          mv ai_os_master_context.md AIbusinessOS
-          
-          # Đẩy thẳng lên không cần tham số lằng nhằng
-          gh gist edit 15d2b34327c0323ff2d1864fdb279a98
-          
-          echo "🎉 BƠM DỮ LIỆU THÀNH CÔNG!"
+- name: Ghi đè lên Gist bằng REST API
+  env:
+    GH_TOKEN: ${{ secrets.GHN_PAT }}
+  run: |
+    # Đọc nội dung file, escape JSON an toàn bằng jq
+    content=$(cat AIbusinessOS | jq -sR .)
+    curl -X PATCH \
+      -H "Authorization: token $GH_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"files\": {\"AIBusinessOS\": {\"content\": $content}}}" \
+      https://api.github.com/gists/15d2b34327c0323ff2d1864fdb279a98
