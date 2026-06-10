@@ -59,3 +59,79 @@ Hệ thống được chia thành 4 luồng xử lý độc lập, chạy trên 
  * **Auth:** Sử dụng biến môi trường (Environment Variables) để quản lý cookies/tokens. **Tuyệt đối không push file cấu hình lên public repository.**
  * **Monitoring:** Theo dõi logs thông qua chính GitHub Actions Run History.
 *Hệ thống được thiết kế bởi Keith Howe (Nguyễn Tiến Hiển) - Tối ưu hóa vì sự bền vững và hiệu suất không giới hạn.*
+================================================================================
+## 📌 KẾ HOẠCH TRIỂN KHAI CHI TIẾT (Ghi nhận sau thảo luận ngày 10/06/2026)
+================================================================================
+
+### 1. Giữ Render thức 24/7
+- **Giải pháp**: Dùng cron-job.org (miễn phí, không thẻ) tạo cron job mỗi 30 giây ping đến `https://your-app.onrender.com/health`.
+- **Code**: Trong `Telegram/bot.py` đã có Flask app, chỉ cần thêm route `/health` (trả về "OK").
+- **Không cần** GitHub Actions cho việc này.
+
+### 2. Thay Playwright bằng Scrapling
+- **Lý do**: Playwright quá nặng (cần browser ~300MB, dễ bị kill trên GitHub Actions). Scrapling nhẹ, nhanh, vẫn vượt bot tốt với `StealthyFetcher`.
+- **So sánh kỹ thuật** (đã ghi nhận): Playwright dùng browser thật, Scrapling dùng HTTP + TLS fingerprint.
+- **Hành động**:
+  - Xóa `playwright` khỏi `requirements.txt`.
+  - Viết lại `Workers/social_validator.py` dùng `scrapling` (import `from scrapling import StealthyFetcher`).
+  - Bỏ `asyncio`, dùng đồng bộ.
+
+### 3. Xóa ChromaDB
+- Xóa file `Core/mem0_client.py`, bỏ `chromadb` khỏi `requirements.txt`.
+
+### 4. Cơ chế xoay vòng 4 tài khoản MongoDB Atlas & Upstash
+- **Mục tiêu**: Dùng chung 4 bộ DB + 4 Redis, tăng băng thông và tránh thắt cổ chai.
+- **Cách thực hiện**:
+  - Tạo `Core/account_rotator.py` quản lý danh sách URI.
+  - Biến môi trường: `MONGODB_URIS='["uri1","uri2","uri3","uri4"]'` và `REDIS_URLS='["redis://...","redis://..."]'`.
+  - Round‑robin: lưu index hiện tại vào Redis key `round_robin_mongo_index` hoặc collection MongoDB `round_robin_state`.
+  - Khi kết nối thất bại, chuyển sang URI tiếp theo.
+- **Áp dụng**: Sửa `Core/mongo.py` và `Core/redis_client.py` để gọi `get_next_uri()`.
+
+### 5. Chỉ 1 repo duy nhất, không bắt buộc 4 workflow
+- **Nguyên tắc**: Chỉ chia việc khi thực sự cần tránh xung đột. Nếu 1 luồng đủ tải, không cần chia.
+- **Nếu phải chia**: Trong cùng repo, tạo nhiều workflow `.yml` với cron schedule lệch pha (ví dụ 0, 15, 30, 45 phút) để tránh trùng. Mỗi workflow set biến môi trường `CORE_ID=1..4` để phân biệt.
+- **Giải pháp đơn giản nhất**: Chỉ cần 1 workflow xử lý tuần tự, dùng `account_rotator` để ghi vào 4 DB luân phiên.
+
+### 6. Worker mới: `data_ingestor`
+- **Nhiệm vụ**: Lắng nghe event `RAW_DATA_SCRAPED`, lưu vào MongoDB (collection `scraped_data`) và commit lên GitHub repo (dùng PyGithub).
+- **Cấu hình**: Cần secret `GITHUB_REPO_TOKEN`, `GITHUB_REPO_NAME`.
+- **Worker này chạy dưới dạng cron** (mỗi 2 phút) hoặc dùng outbox consumer như các worker khác.
+
+### 7. Worker mới: `scrapling_crawler_base`
+- **Nội dung**: Class `BaseCrawler` dùng `StealthyFetcher`, hỗ trợ crawl URL, parse HTML, publish event `RAW_DATA_SCRAPED`.
+- **Dùng để xây dựng các crawler chuyên biệt (Crypto, Real Estate, ...)** nếu cần.
+
+### 8. Workflow `health_check`
+- **Cron**: mỗi 15 phút.
+- **Nhiệm vụ**: Query MongoDB `worker_heartbeat` collection (hoặc Redis key `worker_heartbeat:*`). Nếu heartbeat cũ hơn 20 phút, ghi `sos_queue` và gửi Telegram cảnh báo.
+- **Đặt trong `.github/workflows/health_check.yml`**.
+
+### 9. Retry thông minh qua `next_retry_at`
+- **Hiện tại**: `outbox_events` đã có trường `next_retry_at`, nhưng chưa dùng.
+- **Cải tiến**: Khi worker thất bại với lỗi tạm thời (429, timeout, network error), tính `next_retry_at = now + exponential_backoff(retry_count)` và set `status='pending'`. Cron `outbox_sweeper` sẽ nhặt lại.
+
+### 10. Các tệp cần tạo hoặc sửa (tóm tắt)
+- **Tạo mới**:
+  - `Core/account_rotator.py`
+  - `Workers/data_ingestor.py`
+  - `Workers/scrapling_crawler_base.py`
+  - `.github/workflows/health_check.yml`
+- **Sửa**:
+  - `Telegram/bot.py` (thêm route `/health`, xóa listener thread)
+  - `Workers/social_validator.py` (dùng Scrapling)
+  - `Core/mongo.py`, `Core/redis_client.py` (tích hợp xoay vòng)
+  - `requirements.txt` (thêm `scrapling`, `PyGithub`; bỏ `playwright`, `chromadb`)
+  - `bootstrap.py` (tạo collection `round_robin_state`, `worker_heartbeat` nếu cần)
+
+================================================================================
+## 🗓️ Lộ trình thực hiện dự kiến
+================================================================================
+1. **Ngày 1**: Sửa `social_validator.py`, xóa `mem0_client.py`, cập nhật `requirements.txt`.
+2. **Ngày 2**: Tạo `account_rotator.py`, sửa `mongo.py` và `redis_client.py`, kiểm thử kết nối round‑robin.
+3. **Ngày 3**: Tạo `data_ingestor.py` và `scrapling_crawler_base.py`, tích hợp PyGithub.
+4. **Ngày 4**: Thêm route `/health` vào `bot.py`, cấu hình cron-job.org, xóa listener thread.
+5. **Ngày 5**: Tạo workflow `health_check.yml`, kiểm thử retry thông minh.
+6. **Ngày 6**: Chạy kiểm thử tổng thể, tinh chỉnh cron schedule nếu cần.
+
+Mọi thay đổi đều **không làm vỡ luồng Outbox** và tuân thủ kỷ luật hệ thống.
