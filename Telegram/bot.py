@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
+from flask import Flask # THÊM THƯ VIỆN NÀY ĐỂ TẠO WEBVIEW
 from Core.config import TELEGRAM_BOT_TOKEN
 from Core.redis_client import redis_client
 from Core.mongo import db
@@ -18,45 +19,56 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode=None)
 INSTANCE_ID = str(uuid.uuid4())
 lock_key = "singleton_bot_instance_lock"
 
+# ==========================================
+# TRẠM GÁC WEB CHỐNG SẬP RENDER (DUMMY SERVER)
+# ==========================================
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    """Đường dẫn để Render ping kiểm tra sức khỏe hệ thống"""
+    return f"🟢 Trạm T0 (ID: {INSTANCE_ID}) đang hoạt động ổn định!", 200
+
+def run_dummy_web_server():
+    """Khởi chạy máy chủ Web giả trên một luồng riêng biệt"""
+    # Render sẽ tự động gán biến môi trường PORT, mặc định fallback về 8080
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🌐 [WEBVIEW] Đang mở cổng mạng {port} để qua mặt Render Health Check...")
+    # Tắt log của Flask để tránh rác console
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    app.run(host="0.0.0.0", port=port)
+
+# ==========================================
+# CÁC LUỒNG XỬ LÝ LÕI CỦA HỆ THỐNG
+# ==========================================
 def check_singleton_lock():
-    """
-    Background Thread chạy song song gia hạn quyền sinh sát độc quyền mỗi 30 giây.
-    Nếu phát hiện có instance thứ hai cố tình chạy đè, instance cũ sẽ tự động tự sát.
-    """
+    """Bảo vệ chống trùng lặp tiến trình (Singleton Lock)"""
     print(f"🛡️ [SINGLETON] Trạm chỉ huy khởi động với ID thực thể: {INSTANCE_ID}")
-    
     while True:
         try:
-            # Thử chiếm quyền sở hữu khóa độc quyền trên Redis (TTL 45 giây)
             acquired = redis_client.set(lock_key, INSTANCE_ID, ex=45, nx=True)
-            
             if acquired:
-                pass # Đang giữ chốt an toàn
+                pass
             else:
                 current_holder = redis_client.get(lock_key)
                 if current_holder == INSTANCE_ID:
-                    # Nếu chính ta đang cầm khóa, tiến hành gia hạn thời gian sống (Keep-alive)
                     redis_client.expire(lock_key, 45)
                 else:
-                    print(f"🚨 [SINGLETON] Phát hiện thực thể Bot mới trùng lặp ({current_holder}) đã chiếm quyền điều khiển! Tiến trình tự hủy...")
-                    os._exit(0) # Ngắt khẩn cấp cấp độ hệ điều hành để tránh lặp tin nhắn
-                    
+                    print(f"🚨 [SINGLETON] Phát hiện Bot trùng lặp ({current_holder})! Tự hủy...")
+                    os._exit(0)
         except Exception as e:
-            print(f"⚠️ [SINGLETON] Lỗi tuần tra khóa độc quyền Redis: {e}")
-            
+            print(f"⚠️ [SINGLETON] Lỗi Redis: {e}")
         time.sleep(30)
 
 def outbox_listener_loop():
-    """
-    Luồng lắng nghe Outbox độc lập: Phát hiện sự kiện báo cáo từ Worker để ting-ting cho Giám đốc.
-    Tuân thủ tuyệt đối Outbox Pattern.
-    """
-    print("🎧 [TELEGRAM_LISTENER] Đang dỏng tai nghe ngóng sự kiện báo cáo từ các Worker...")
+    """Luồng dỏng tai nghe Outbox chờ tin nhắn báo cáo từ Worker"""
+    print("🎧 [TELEGRAM_LISTENER] Đang dỏng tai nghe ngóng sự kiện báo cáo...")
     wait = 2
     while True:
         try:
             now = datetime.now(timezone.utc)
-            # Quét tìm các sự kiện gửi về Telegram (Hiện tại là STRATEGY_GENERATED)
             event = db.outbox_events.find_one_and_update(
                 {
                     "status": "pending",
@@ -77,29 +89,55 @@ def outbox_listener_loop():
                 wait = min(10, wait * 2)
                 continue
             
-            wait = 2 # Reset độ trễ khi có việc
+            wait = 2 
             payload = event.get("payload", {})
-            event_type = event.get("event_type")
             
-            if event_type == "STRATEGY_GENERATED":
+            if event.get("event_type") == "STRATEGY_GENERATED":
                 project_name = payload.get("project_name", "Không rõ tên")
                 text_msg = (
                     f"🔔 *Ting Ting!*\n\n"
-                    f"Bản vẽ chiến lược cho dự án `{project_name}` đã được Worker T2 thiết kế xong.\n\n"
-                    f"👉 Xin mời Giám đốc vào mục *Duyệt Chiến Lược Đang Chờ* để thẩm định lập tức."
+                    f"Bản vẽ chiến lược cho dự án `{project_name}` đã hoàn tất.\n"
+                    f"👉 Xin mời Giám đốc vào mục *Duyệt Chiến Lược Đang Chờ*."
                 )
                 
-                # Bắn tin nhắn cho toàn bộ Admin đang active
                 admins = db.system_admins.find({"status": "active"})
                 for admin in admins:
                     chat_id = admin.get("telegram_id")
                     if chat_id:
                         try:
                             bot.send_message(chat_id, text_msg, parse_mode="Markdown")
-                        except Exception as e:
-                            print(f"⚠️ [TELEGRAM_LISTENER] Không thể gửi thông báo cho Admin {chat_id}: {e}")
+                        except Exception:
+                            pass
 
-            # Commit hoàn thành tác vụ vòng lặp
+            db.outbox_events.update_one(
+                {"_id": event["_id"]},
+                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}}
+            )
+        except Exception:
+            time.sleep(5)
+
+def run_singleton_bot():
+    if not TELEGRAM_BOT_TOKEN:
+        print("❌ [TELEGRAM] TELEGRAM_BOT_TOKEN trống rỗng!")
+        return
+        
+    # 1. Kích hoạt Trạm gác Web (Chống sập Render)
+    web_thread = threading.Thread(target=run_dummy_web_server, daemon=True)
+    web_thread.start()
+
+    # 2. Kích hoạt Bảo vệ độc quyền
+    monitor_thread = threading.Thread(target=check_singleton_lock, daemon=True)
+    monitor_thread.start()
+    
+    # 3. Kích hoạt Luồng lắng nghe Outbox
+    listener_thread = threading.Thread(target=outbox_listener_loop, daemon=True)
+    listener_thread.start()
+    
+    print("🚀 [TELEGRAM] Hệ thống lõi đang kéo data (Infinity Polling)...")
+    bot.infinity_polling(timeout=20, long_polling_timeout=25)
+
+if __name__ == "__main__":
+    run_singleton_bot()
             db.outbox_events.update_one(
                 {"_id": event["_id"]},
                 {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}}
