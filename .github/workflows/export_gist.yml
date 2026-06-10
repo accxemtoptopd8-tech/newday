@@ -1,11 +1,62 @@
-- name: Ghi đè lên Gist bằng REST API
-  env:
-    GH_TOKEN: ${{ secrets.GHN_PAT }}
-  run: |
-    # Đọc nội dung file, escape JSON an toàn bằng jq
-    content=$(cat AIbusinessOS | jq -sR .)
-    curl -X PATCH \
-      -H "Authorization: token $GH_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "{\"files\": {\"AIBusinessOS\": {\"content\": $content}}}" \
-      https://api.github.com/gists/15d2b34327c0323ff2d1864fdb279a98
+name: 🧠 Đúc Mega-Context & Xuất Gist
+
+on:
+  workflow_dispatch:  # chỉ chạy thủ công, tránh cron không cần thiết
+
+jobs:
+  export-master-gist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Đúc tệp Mega-Context
+        run: python3 repo_scanner.py
+
+      - name: Kiểm tra token (debug)
+        env:
+          GH_TOKEN: ${{ secrets.GHN_PAT }}
+        run: |
+          echo "🔍 Kiểm tra token có hợp lệ không..."
+          curl -H "Authorization: token $GH_TOKEN" \
+               https://api.github.com/user
+          # nếu trả về 401 thì token sai hoặc thiếu quyền
+
+      - name: Đổi tên file
+        run: mv ai_os_master_context.md AIbusinessOS
+
+      - name: Ghi đè lên Gist bằng REST API (dùng curl)
+        env:
+          GH_TOKEN: ${{ secrets.GHN_PAT }}
+          GIST_ID: "15d2b34327c0323ff2d1864fdb279a98"   # thay bằng ID thực của bạn
+        run: |
+          # Đọc file, escape JSON an toàn bằng jq
+          content=$(cat AIbusinessOS | jq -sR .)
+          response=$(curl -s -X PATCH \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"files\": {\"AIBusinessOS\": {\"content\": $content}}}" \
+            https://api.github.com/gists/$GIST_ID)
+          
+          # Kiểm tra lỗi
+          if echo "$response" | grep -q '"message":'; then
+            echo "❌ Lỗi từ GitHub API: $response"
+            exit 1
+          else
+            echo "🎉 BƠM DỮ LIỆU THÀNH CÔNG!"
+          fi
+
+      # (Tuỳ chọn) Nếu gist cũ không thuộc quyền, có thể tạo mới và lấy ID
+      - name: (Dự phòng) Tạo Gist mới nếu cần
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GHN_PAT }}
+        run: |
+          echo "⚠️ Không thể cập nhật gist cũ. Tạo gist mới..."
+          gh gist create AIbusinessOS --public --desc "Master Context" --filename "AIBusinessOS"
+          # Lấy ID của gist mới từ output và in ra để cập nhật vào secrets
