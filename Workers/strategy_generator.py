@@ -1,3 +1,6 @@
+# ==================================================
+# FILE: ./Workers/strategy_generator.py
+# ==================================================
 import time
 import os
 import json
@@ -76,8 +79,9 @@ class StrategyGeneratorWorker(EventWorker):
                 model = self.default_model
 
             system_prompt = (
-                "Bạn là Giám đốc Chiến lược Tăng trưởng tối cao. Dựa trên insight đầu vào, hãy lập kế hoạch thâm nhập "
-                "thị trường hoàn chỉnh. Bạn bắt buộc phải trả về định dạng cấu trúc JSON chính xác tuyệt đối gồm: "
+                "Bạn là Giám đốc Chiến lược Tăng trưởng tối cao. "
+                "Dựa trên insight đầu vào, hãy lập kế hoạch thâm nhập thị trường hoàn chỉnh. "
+                "Bạn bắt buộc phải trả về định dạng cấu trúc JSON chính xác tuyệt đối gồm: "
                 "insights (mảng các chuỗi phân tích sâu), pain_keywords (mảng từ khóa nỗi đau của khách hàng), "
                 "value_props (mảng các thông điệp giá trị cốt lõi đánh gục khách hàng)."
             )
@@ -93,6 +97,7 @@ class StrategyGeneratorWorker(EventWorker):
 
             with db.client.start_session() as session:
                 with session.start_transaction():
+                    # 1. Lưu bản vẽ chiến lược
                     db.strategy_reports.update_one(
                         {"project_id": project_id},
                         {"$set": {
@@ -105,9 +110,26 @@ class StrategyGeneratorWorker(EventWorker):
                         upsert=True,
                         session=session
                     )
+                    
+                    # 2. Xóa lệnh đóng băng ngân sách
                     db.budget_reservations.delete_many({"project_id": project_id, "worker_name": self.name}, session=session)
 
-            print(f"✅ [STRATEGY] Đã xuất bản đồ chiến lược thành công cho Dự án {project_id}. Đang chờ duyệt tại T0.")
+                    # 3. KỶ LUẬT LÕI: Phát lệnh báo cáo hoàn thành cho T0
+                    db.outbox_events.insert_one({
+                        "event_type": "STRATEGY_GENERATED",
+                        "publisher": self.name,
+                        "payload": {
+                            "project_id": project_id,
+                            "project_name": raw_prod.get("project_name", "Unknown Project")
+                        },
+                        "status": "pending",
+                        "retry_count": 0,
+                        "created_at": now,
+                        "next_retry_at": now,
+                        "claim_timeout": 300
+                    }, session=session)
+
+            print(f"✅ [STRATEGY] Đã xuất bản đồ chiến lược thành công cho Dự án {project_id}. Đã bắn Event gọi T0.")
 
         except Exception as e:
             print(f"🚨 [STRATEGY] Trục trặc hệ thống xử lý mô hình chiến lược: {e}")
@@ -137,7 +159,7 @@ class StrategyGeneratorWorker(EventWorker):
                     "status": "processing",
                     "claimed_by": self.instance_id,
                     "claimed_at": now,
-                    "claim_timeout": now + timedelta(minutes=30)  # T2: 30p
+                    "claim_timeout": now + timedelta(minutes=30)
                 }},
                 sort=[("created_at", 1)]
             )
