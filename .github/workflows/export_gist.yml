@@ -18,19 +18,14 @@ jobs:
       - name: Đúc tệp Mega-Context
         run: python3 repo_scanner.py
 
-      - name: Ghi đè lên Gist mới tinh của Giám đốc
+      - name: Ghi đè lên Gist
         env:
           GH_TOKEN: ${{ secrets.GHN_PAT }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "❌ LỖI: Sếp chưa cấu hình Secret đặt tên là GHN_PAT trong Settings của Repo này!"
-            exit 1
-          fi
-          
-          # 1. Đổi tên file vừa đúc ra cho khớp 100% với tên file trên Gist của Sếp
+          # Đổi tên file local giống hệt tên file trên Gist
           mv ai_os_master_context.md AIbusinessOS
           
-          # 2. Đẩy thẳng cục dữ liệu lên (Bây giờ 2 bên đã cùng tên nên nó sẽ tự nuốt)
+          # Đẩy thẳng lên không cần tham số lằng nhằng
           gh gist edit a73e1501996ae58e5824cb4f3c4e97f0 AIbusinessOS
           
-          echo "🎉 ĐÃ BƠM ĐẦY DỮ LIỆU VÀO ĐÚNG LINK SẾP ĐANG XEM!"
+          echo "🎉 BƠM DỮ LIỆU THÀNH CÔNG!"
