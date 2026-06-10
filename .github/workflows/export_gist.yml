@@ -27,9 +27,7 @@ jobs:
             exit 1
           fi
           
-          # Đẩy cả 2 file lên cùng lúc: Tên_trên_Gist = Tên_file_local
-          gh gist edit a73e1501996ae58e5824cb4f3c4e97f0 \
-            -f ai_os_master_context.md=ai_os_master_context.md \
-            -f README.md=README.md
+          # Đẩy nội dung Mega-Context đè thẳng vào file tên là "AIbusinessOS" trên Gist của Sếp
+          gh gist edit a73e1501996ae58e5824cb4f3c4e97f0 -f AIbusinessOS=ai_os_master_context.md
           
-          echo "🎉 ĐÃ CẬP NHẬT GIST VỚI CẢ TỆP CONTEXT VÀ README!"
+          echo "🎉 ĐÃ BƠM ĐẦY DỮ LIỆU VÀO ĐÚNG LINK SẾP ĐANG XEM!"
