@@ -26,6 +26,6 @@ jobs:
           mv ai_os_master_context.md AIbusinessOS
           
           # Đẩy thẳng lên không cần tham số lằng nhằng
-          gh gist edit 45fd7467b3e2dc0adae7ad113218914df71c96ae
+          gh gist edit 15d2b34327c0323ff2d1864fdb279a98
           
           echo "🎉 BƠM DỮ LIỆU THÀNH CÔNG!"
